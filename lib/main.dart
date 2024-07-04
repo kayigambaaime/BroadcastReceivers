@@ -1,6 +1,17 @@
+import 'dart:async';
+import 'package:battery_plus/battery_plus.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:fluttertoast/fluttertoast.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
   runApp(MyApp());
 }
 
@@ -26,15 +37,83 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  late StreamSubscription<ConnectivityResult> _connectivitySubscription;
+  late Battery _battery;
+  late StreamSubscription<BatteryState> _batteryStateSubscription;
+  bool isDarkMode = false;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+
+    // Load the saved theme mode
+    _loadThemeMode();
+
+    // Subscribe to connectivity changes
+    _connectivitySubscription = Connectivity()
+        .onConnectivityChanged
+        .listen((ConnectivityResult result) {
+      if (result == ConnectivityResult.none) {
+        Fluttertoast.showToast(msg: "Internet Disconnected");
+      } else {
+        Fluttertoast.showToast(msg: "Internet Connected");
+      }
+    });
+
+    // Monitor battery level
+    _battery = Battery();
+    _battery.batteryLevel.then((level) {
+      if (level >= 90) {
+        Fluttertoast.showToast(msg: "Battery is over 90% and charging");
+      }
+    });
+
+    // Monitor battery state changes
+    _batteryStateSubscription =
+        _battery.onBatteryStateChanged.listen((BatteryState state) async {
+      if (state == BatteryState.charging) {
+        int level = await _battery.batteryLevel;
+        if (level >= 90) {
+          Fluttertoast.showToast(msg: "Battery is over 90% and charging");
+        }
+      }
+    });
+  }
+
+  void _loadThemeMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      isDarkMode = prefs.getBool('isDarkMode') ?? false;
+      if (isDarkMode) {
+        WidgetsBinding.instance.window.platformDispatcher.platformBrightness =
+            Brightness.dark;
+      } else {
+        WidgetsBinding.instance.window.platformDispatcher.platformBrightness =
+            Brightness.light;
+      }
+    });
+  }
+
+  void _toggleThemeMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      isDarkMode = !isDarkMode;
+      prefs.setBool('isDarkMode', isDarkMode);
+      if (isDarkMode) {
+        WidgetsBinding.instance.window.platformDispatcher.platformBrightness =
+            Brightness.dark;
+      } else {
+        WidgetsBinding.instance.window.platformDispatcher.platformBrightness =
+            Brightness.light;
+      }
+    });
   }
 
   @override
   void dispose() {
+    _connectivitySubscription.cancel();
+    _batteryStateSubscription.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -44,6 +123,14 @@ class _MyHomePageState extends State<MyHomePage>
     return Scaffold(
       appBar: AppBar(
         title: Text('Tab Navigation Example'),
+        actions: [
+          Switch(
+            value: isDarkMode,
+            onChanged: (value) {
+              _toggleThemeMode();
+            },
+          ),
+        ],
       ),
       drawer: Drawer(
         child: ListView(
@@ -65,24 +152,24 @@ class _MyHomePageState extends State<MyHomePage>
               leading: Icon(Icons.login),
               title: Text('Sign In'),
               onTap: () {
-                Navigator.pop(context); // Close the drawer
-                _tabController.animateTo(0); // Switch to Sign In tab
+                Navigator.pop(context);
+                _tabController.animateTo(0);
               },
             ),
             ListTile(
               leading: Icon(Icons.person_add),
               title: Text('Sign Up'),
               onTap: () {
-                Navigator.pop(context); // Close the drawer
-                _tabController.animateTo(1); // Switch to Sign Up tab
+                Navigator.pop(context);
+                _tabController.animateTo(1);
               },
             ),
             ListTile(
               leading: Icon(Icons.calculate),
               title: Text('Calculator'),
               onTap: () {
-                Navigator.pop(context); // Close the drawer
-                _tabController.animateTo(2); // Switch to Calculator tab
+                Navigator.pop(context);
+                _tabController.animateTo(2);
               },
             ),
           ],
@@ -121,6 +208,9 @@ class _MyHomePageState extends State<MyHomePage>
 }
 
 class SignInScreen extends StatelessWidget {
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+
   @override
   Widget build(BuildContext context) {
     return Center(
@@ -135,13 +225,15 @@ class SignInScreen extends StatelessWidget {
             ),
             SizedBox(height: 20),
             TextFormField(
+              controller: _emailController,
               decoration: InputDecoration(
-                labelText: 'Username',
+                labelText: 'Email',
                 border: OutlineInputBorder(),
               ),
             ),
             SizedBox(height: 20),
             TextFormField(
+              controller: _passwordController,
               obscureText: true,
               decoration: InputDecoration(
                 labelText: 'Password',
@@ -150,19 +242,80 @@ class SignInScreen extends StatelessWidget {
             ),
             SizedBox(height: 20),
             ElevatedButton(
-              onPressed: () {
-                // Implement your sign-in logic here
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => SignedInScreen()),
-                );
+              onPressed: () async {
+                try {
+                  UserCredential userCredential =
+                      await FirebaseAuth.instance.signInWithEmailAndPassword(
+                    email: _emailController.text,
+                    password: _passwordController.text,
+                  );
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => SignedInScreen()),
+                  );
+                } on FirebaseAuthException catch (e) {
+                  Fluttertoast.showToast(msg: e.message!);
+                }
               },
               child: Text('Sign In'),
+            ),
+            SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () async {
+                try {
+                  UserCredential userCredential = await signInWithGoogle();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => SignedInScreen()),
+                  );
+                } on FirebaseAuthException catch (e) {
+                  Fluttertoast.showToast(msg: e.message!);
+                }
+              },
+              child: Text('Sign In with Google'),
+            ),
+            SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () async {
+                try {
+                  UserCredential userCredential = await signInWithFacebook();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => SignedInScreen()),
+                  );
+                } on FirebaseAuthException catch (e) {
+                  Fluttertoast.showToast(msg: e.message!);
+                }
+              },
+              child: Text('Sign In with Facebook'),
             ),
           ],
         ),
       ),
     );
+  }
+
+  Future<UserCredential> signInWithGoogle() async {
+    final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
+    final GoogleSignInAuthentication? googleAuth =
+        await googleUser?.authentication;
+
+    final credential = GoogleAuthProvider.credential(
+      accessToken: googleAuth?.accessToken,
+      idToken: googleAuth?.idToken,
+    );
+
+    return await FirebaseAuth.instance.signInWithCredential(credential);
+  }
+
+  Future<UserCredential> signInWithFacebook() async {
+    final LoginResult result = await FacebookAuth.instance.login();
+
+    final OAuthCredential facebookAuthCredential =
+        FacebookAuthProvider.credential(result.accessToken!.token);
+
+    return await FirebaseAuth.instance
+        .signInWithCredential(facebookAuthCredential);
   }
 }
 
@@ -184,6 +337,11 @@ class SignedInScreen extends StatelessWidget {
 }
 
 class SignUpScreen extends StatelessWidget {
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _confirmPasswordController =
+      TextEditingController();
+
   @override
   Widget build(BuildContext context) {
     return Center(
@@ -198,13 +356,7 @@ class SignUpScreen extends StatelessWidget {
             ),
             SizedBox(height: 20),
             TextFormField(
-              decoration: InputDecoration(
-                labelText: 'Username',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            SizedBox(height: 20),
-            TextFormField(
+              controller: _emailController,
               decoration: InputDecoration(
                 labelText: 'Email',
                 border: OutlineInputBorder(),
@@ -212,6 +364,7 @@ class SignUpScreen extends StatelessWidget {
             ),
             SizedBox(height: 20),
             TextFormField(
+              controller: _passwordController,
               obscureText: true,
               decoration: InputDecoration(
                 labelText: 'Password',
@@ -220,6 +373,7 @@ class SignUpScreen extends StatelessWidget {
             ),
             SizedBox(height: 20),
             TextFormField(
+              controller: _confirmPasswordController,
               obscureText: true,
               decoration: InputDecoration(
                 labelText: 'Confirm Password',
@@ -228,12 +382,25 @@ class SignUpScreen extends StatelessWidget {
             ),
             SizedBox(height: 20),
             ElevatedButton(
-              onPressed: () {
-                // Implement your sign-up logic here
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => SignedUpScreen()),
-                );
+              onPressed: () async {
+                if (_passwordController.text ==
+                    _confirmPasswordController.text) {
+                  try {
+                    UserCredential userCredential = await FirebaseAuth.instance
+                        .createUserWithEmailAndPassword(
+                      email: _emailController.text,
+                      password: _passwordController.text,
+                    );
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => SignedUpScreen()),
+                    );
+                  } on FirebaseAuthException catch (e) {
+                    Fluttertoast.showToast(msg: e.message!);
+                  }
+                } else {
+                  Fluttertoast.showToast(msg: "Passwords do not match");
+                }
               },
               child: Text('Sign Up'),
             ),
