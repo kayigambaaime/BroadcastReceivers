@@ -37,85 +37,11 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  late StreamSubscription<ConnectivityResult> _connectivitySubscription;
-  late Battery _battery;
-  late StreamSubscription<BatteryState> _batteryStateSubscription;
-  bool isDarkMode = false;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-
-    // Load the saved theme mode
-    _loadThemeMode();
-
-    // Subscribe to connectivity changes
-    _connectivitySubscription = Connectivity()
-        .onConnectivityChanged
-        .listen((ConnectivityResult result) {
-      if (result == ConnectivityResult.none) {
-        Fluttertoast.showToast(msg: "Internet Disconnected");
-      } else {
-        Fluttertoast.showToast(msg: "Internet Connected");
-      }
-    });
-
-    // Monitor battery level
-    _battery = Battery();
-    _battery.batteryLevel.then((level) {
-      if (level >= 90) {
-        Fluttertoast.showToast(msg: "Battery is over 90% and charging");
-      }
-    });
-
-    // Monitor battery state changes
-    _batteryStateSubscription =
-        _battery.onBatteryStateChanged.listen((BatteryState state) async {
-      if (state == BatteryState.charging) {
-        int level = await _battery.batteryLevel;
-        if (level >= 90) {
-          Fluttertoast.showToast(msg: "Battery is over 90% and charging");
-        }
-      }
-    });
-  }
-
-  void _loadThemeMode() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      isDarkMode = prefs.getBool('isDarkMode') ?? false;
-      if (isDarkMode) {
-        WidgetsBinding.instance.window.platformDispatcher.platformBrightness =
-            Brightness.dark;
-      } else {
-        WidgetsBinding.instance.window.platformDispatcher.platformBrightness =
-            Brightness.light;
-      }
-    });
-  }
-
-  void _toggleThemeMode() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      isDarkMode = !isDarkMode;
-      prefs.setBool('isDarkMode', isDarkMode);
-      if (isDarkMode) {
-        WidgetsBinding.instance.window.platformDispatcher.platformBrightness =
-            Brightness.dark;
-      } else {
-        WidgetsBinding.instance.window.platformDispatcher.platformBrightness =
-            Brightness.light;
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _connectivitySubscription.cancel();
-    _batteryStateSubscription.cancel();
-    _tabController.dispose();
-    super.dispose();
   }
 
   @override
@@ -125,9 +51,9 @@ class _MyHomePageState extends State<MyHomePage>
         title: Text('Tab Navigation Example'),
         actions: [
           Switch(
-            value: isDarkMode,
+            value: false, // Replace with your isDarkMode value
             onChanged: (value) {
-              _toggleThemeMode();
+              // Add your theme toggle logic
             },
           ),
         ],
@@ -153,7 +79,7 @@ class _MyHomePageState extends State<MyHomePage>
               title: Text('Sign In'),
               onTap: () {
                 Navigator.pop(context);
-                _tabController.animateTo(0);
+                // Add your navigation logic
               },
             ),
             ListTile(
@@ -161,7 +87,7 @@ class _MyHomePageState extends State<MyHomePage>
               title: Text('Sign Up'),
               onTap: () {
                 Navigator.pop(context);
-                _tabController.animateTo(1);
+                // Add your navigation logic
               },
             ),
             ListTile(
@@ -169,7 +95,7 @@ class _MyHomePageState extends State<MyHomePage>
               title: Text('Calculator'),
               onTap: () {
                 Navigator.pop(context);
-                _tabController.animateTo(2);
+                // Add your navigation logic
               },
             ),
           ],
@@ -204,6 +130,12 @@ class _MyHomePageState extends State<MyHomePage>
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 }
 
